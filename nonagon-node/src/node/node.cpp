@@ -10,12 +10,72 @@ namespace nonagon {
 
 NodeConfig NodeConfig::from_file(const std::string& path) {
     NodeConfig config;
-    // TODO: Implement TOML/JSON config file parsing
-    // For now, return default config
     std::ifstream file(path);
-    if (file.is_open()) {
-        // Basic parsing could go here
-        file.close();
+    if (!file.is_open()) return config;
+
+    std::string line;
+    std::string current_section = "node";
+
+    auto trim = [](const std::string& str) {
+        auto first = str.find_first_not_of(" \t\r\n");
+        if (std::string::npos == first) return std::string();
+        auto last = str.find_last_not_of(" \t\r\n");
+        return str.substr(first, (last - first + 1));
+    };
+
+    auto to_uint64 = [](const std::string& s) {
+        try { return std::stoull(s); } catch(...) { return 0ULL; }
+    };
+    auto to_uint16 = [](const std::string& s) {
+        try { return (uint16_t)std::stoul(s); } catch(...) { return (uint16_t)0; }
+    };
+
+    while (std::getline(file, line)) {
+        line = trim(line);
+        if (line.empty() || line[0] == '#') continue;
+
+        if (line.front() == '[' && line.back() == ']') {
+            current_section = line.substr(1, line.size() - 2);
+            continue;
+        }
+
+        auto eq = line.find('=');
+        if (eq != std::string::npos) {
+            std::string key = trim(line.substr(0, eq));
+            std::string val_str = trim(line.substr(eq + 1));
+            
+            // Remove quotes if present
+            if (val_str.size() >= 2 && val_str.front() == '"' && val_str.back() == '"') {
+                val_str = val_str.substr(1, val_str.size() - 2);
+            }
+
+            if (current_section == "node") {
+                 if (key == "name") config.node_name = val_str;
+                 else if (key == "data_dir") config.data_dir = val_str;
+                 else if (key == "chain_id") config.chain_id = to_uint64(val_str);
+                 else if (key == "is_sequencer") config.is_sequencer = (val_str == "true");
+                 else if (key == "sequencer_key_file") config.sequencer_key_file = val_str;
+                 else if (key == "sequencer_address") config.sequencer_address = Address::from_hex(val_str).value_or(Address{});
+            }
+            else if (current_section == "network") {
+                 if (key == "listen_port") config.network.listen_port = to_uint16(val_str);
+                 else if (key == "max_peers") config.network.max_peers = (uint32_t)to_uint64(val_str);
+            }
+            else if (current_section == "rpc") {
+                 if (key == "http_port") config.rpc.http_port = to_uint16(val_str);
+                 else if (key == "ws_port") config.rpc.ws_port = to_uint16(val_str);
+            }
+            else if (current_section == "consensus") {
+                 if (key == "block_time_ms") config.consensus.block_time_ms = to_uint64(val_str);
+                 else if (key == "max_sequencers") config.consensus.max_sequencers = (uint32_t)to_uint64(val_str);
+                 else if (key == "min_stake") config.consensus.min_stake = to_uint64(val_str);
+            }
+            else if (current_section == "settlement") {
+                if (key == "cardano_node") config.cardano.node_socket_path = val_str;
+                else if (key == "state_contract") config.cardano.state_contract = val_str;
+                else if (key == "challenge_period_seconds") config.cardano.challenge_period_slots = to_uint64(val_str); // Approximating slots=seconds for now
+            }
+        }
     }
     return config;
 }
@@ -23,11 +83,35 @@ NodeConfig NodeConfig::from_file(const std::string& path) {
 void NodeConfig::save_to_file(const std::string& path) const {
     std::ofstream file(path);
     if (file.is_open()) {
-        file << "# Nonagon Node Configuration\n";
+        file << "# Nonagon Node Configuration\n\n";
+        
         file << "[node]\n";
         file << "name = \"" << node_name << "\"\n";
         file << "data_dir = \"" << data_dir << "\"\n";
         file << "chain_id = " << chain_id << "\n";
+        file << "is_sequencer = " << (is_sequencer ? "true" : "false") << "\n";
+        if (!sequencer_key_file.empty()) file << "sequencer_key_file = \"" << sequencer_key_file << "\"\n";
+        if (is_sequencer) file << "sequencer_address = \"" << sequencer_address.to_hex() << "\"\n";
+        file << "\n";
+
+        file << "[network]\n";
+        file << "listen_port = " << network.listen_port << "\n";
+        file << "max_peers = " << network.max_peers << "\n\n";
+
+        file << "[rpc]\n";
+        file << "http_port = " << rpc.http_port << "\n";
+        file << "ws_port = " << rpc.ws_port << "\n\n";
+
+        file << "[consensus]\n";
+        file << "block_time_ms = " << consensus.block_time_ms << "\n";
+        file << "max_sequencers = " << consensus.max_sequencers << "\n";
+        file << "min_stake = " << consensus.min_stake << "\n\n";
+
+        file << "[settlement]\n";
+        file << "cardano_node = \"" << cardano.node_socket_path << "\"\n";
+        file << "state_contract = \"" << cardano.state_contract << "\"\n";
+        file << "challenge_period_seconds = " << cardano.challenge_period_slots << "\n";
+        
         file.close();
     }
 }

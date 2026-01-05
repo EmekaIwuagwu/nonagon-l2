@@ -361,9 +361,70 @@ Bytes Block::encode() const {
 }
 
 std::optional<Block> Block::decode(const Bytes& data) {
-    // TODO: Implement full block decoding
-    if (data.empty()) return std::nullopt;
-    return Block{};
+    if (data.size() < 212) return std::nullopt; // 212 is fixed header size
+
+    Block block;
+    size_t offset = 0;
+
+    auto read_uint64 = [&](size_t& off) -> uint64_t {
+        uint64_t v = 0;
+        for (int i = 0; i < 8; ++i) {
+            v = (v << 8) | data[off++];
+        }
+        return v;
+    };
+
+    auto read_bytes = [&](size_t& off, uint8_t* dest, size_t count) {
+        std::memcpy(dest, data.data() + off, count);
+        off += count;
+    };
+
+    // Header decoding
+    block.header.number = read_uint64(offset);
+
+    // Hashes (32 bytes each)
+    read_bytes(offset, block.header.parent_hash.data(), 32);
+    read_bytes(offset, block.header.state_root.data(), 32);
+    read_bytes(offset, block.header.transactions_root.data(), 32);
+    read_bytes(offset, block.header.receipts_root.data(), 32);
+
+    // Sequencer Address (28 bytes)
+    read_bytes(offset, block.header.sequencer.payment_credential.data(), 28);
+
+    // Remaining Header fields
+    block.header.gas_limit = read_uint64(offset);
+    block.header.gas_used = read_uint64(offset);
+    block.header.base_fee = read_uint64(offset);
+    block.header.timestamp = read_uint64(offset);
+    block.header.l1_block_number = read_uint64(offset);
+    block.header.batch_id = read_uint64(offset);
+
+    // Parse Transactions
+    if (offset + 4 > data.size()) return std::nullopt;
+
+    uint32_t tx_count = 0;
+    for (int i = 0; i < 4; ++i) {
+        tx_count = (tx_count << 8) | data[offset++];
+    }
+
+    for (uint32_t i = 0; i < tx_count; ++i) {
+        if (offset + 4 > data.size()) return std::nullopt;
+        uint32_t len = 0;
+        for (int k = 0; k < 4; ++k) {
+            len = (len << 8) | data[offset++];
+        }
+
+        if (offset + len > data.size()) return std::nullopt;
+        
+        Bytes tx_bytes(data.begin() + offset, data.begin() + offset + len);
+        auto tx = Transaction::decode(tx_bytes);
+        if (!tx) return std::nullopt;
+        
+        block.transactions.push_back(*tx);
+        offset += len;
+    }
+
+    return block;
 }
 
 // ============================================================================
