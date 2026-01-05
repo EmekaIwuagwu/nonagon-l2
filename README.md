@@ -23,6 +23,8 @@
 
 ---
 
+![Nonagon Explorer Dashboard](assets/explorer_dashboard.png)
+
 ## 📁 Project Structure
 
 ```

@@ -511,7 +511,24 @@ Response EthNamespace::get_storage_at(const Request& req) {
 }
 
 Response EthNamespace::get_block_by_number(const Request& req) {
-    auto block_opt = blocks_->get_block(blocks_->get_head());
+    uint64_t num = blocks_->get_head();
+    if (req.params) {
+        std::string p = *req.params;
+        if (p.find("earliest") != std::string::npos) num = 0;
+        else if (p.find("pending") != std::string::npos) num = blocks_->get_head();
+        else if (p.find("latest") != std::string::npos) num = blocks_->get_head();
+        else {
+            std::regex hex_regex(R"(\"(0x[0-9a-fA-F]+)\")");
+            std::smatch match;
+            if (std::regex_search(p, match, hex_regex)) {
+                try {
+                    num = std::stoull(match[1].str(), nullptr, 16);
+                } catch(...) { }
+            }
+        }
+    }
+
+    auto block_opt = blocks_->get_block(num);
     if (!block_opt) {
         return Response::success(req.id.value_or(0), "null");
     }
@@ -531,7 +548,60 @@ Response EthNamespace::get_block_by_number(const Request& req) {
     ss << ",\"gasLimit\":\"0x" << std::hex << block.header.gas_limit << "\"";
     ss << ",\"gasUsed\":\"0x" << std::hex << block.header.gas_used << "\"";
     ss << ",\"baseFeePerGas\":\"0x" << std::hex << block.header.base_fee << "\"";
-    ss << ",\"transactions\":[]";
+    // Check for full transaction objects request
+    bool full_txs = false;
+    if (req.params && req.params->find("true") != std::string::npos) {
+        full_txs = true;
+    }
+
+    ss << ",\"transactions\":[";
+    for (size_t i = 0; i < block.transactions.size(); ++i) {
+        if (i > 0) ss << ",";
+        const auto& tx = block.transactions[i];
+        
+        if (full_txs) {
+            ss << "{";
+            
+            ss << "\"hash\":\"0x";
+            auto h = tx.hash();
+            for (auto b : h) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"nonce\":\"0x" << std::hex << tx.nonce << "\",";
+            
+            ss << "\"blockHash\":\"0x";
+            auto bh = block.header.hash();
+            for (auto b : bh) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"blockNumber\":\"0x" << std::hex << block.header.number << "\",";
+            ss << "\"transactionIndex\":\"0x" << std::hex << i << "\",";
+            
+            ss << "\"from\":\"0x";
+            for (auto b : tx.from.payment_credential) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"to\":\"0x";
+            for (auto b : tx.to.payment_credential) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"value\":\"0x" << std::hex << tx.value << "\",";
+            ss << "\"gas\":\"0x" << std::hex << tx.gas_limit << "\",";
+            ss << "\"gasPrice\":\"0x" << std::hex << tx.max_fee_per_gas << "\",";
+            
+            ss << "\"input\":\"0x";
+            for (auto b : tx.data) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\"";
+            
+            ss << "}";
+        } else {
+            ss << "\"0x";
+            auto h = tx.hash();
+            for (auto b : h) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\"";
+        }
+    }
+    ss << "]";
     ss << "}";
     
     return Response::success(req.id.value_or(0), ss.str());
@@ -557,7 +627,65 @@ Response EthNamespace::get_block_transaction_count_by_hash(const Request& req) {
 }
 
 Response EthNamespace::get_transaction_by_hash(const Request& req) {
-    return Response::success(req.id.value_or(0), "null");
+    if (!req.params.has_value() || req.params->empty()) return Response::success(req.id.value_or(0), "null");
+
+    std::string params = req.params.value();
+    std::regex hex_regex("\"(0x[a-fA-F0-9]+)\"");
+    std::smatch match;
+    if (!std::regex_search(params, match, hex_regex)) return Response::success(req.id.value_or(0), "null");
+
+    std::string tx_hash_str = match[1].str();
+    if (tx_hash_str.starts_with("0x")) tx_hash_str = tx_hash_str.substr(2);
+    
+    if (tx_hash_str.length() != 64) return Response::success(req.id.value_or(0), "null");
+
+    Hash256 tx_hash;
+    for (size_t i = 0; i < 32; ++i) {
+        try {
+            tx_hash[i] = static_cast<uint8_t>(std::stoi(tx_hash_str.substr(i*2, 2), nullptr, 16));
+        } catch (...) { return Response::success(req.id.value_or(0), "null"); }
+    }
+    
+    auto receipt_opt = blocks_->get_receipt(tx_hash);
+    if (!receipt_opt) return Response::success(req.id.value_or(0), "null");
+    
+    auto block = blocks_->get_block(receipt_opt->block_number);
+    if (!block || receipt_opt->transaction_index >= block->transactions.size()) 
+        return Response::success(req.id.value_or(0), "null");
+        
+    const auto& tx = block->transactions[receipt_opt->transaction_index];
+    
+    std::ostringstream ss;
+    ss << "{";
+    ss << "\"hash\":\"0x" << tx_hash_str << "\",";
+    ss << "\"nonce\":\"0x" << std::hex << tx.nonce << "\",";
+    
+    ss << "\"blockHash\":\"0x";
+    auto bh = block->header.hash();
+    for (auto b : bh) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+    ss << "\",";
+    
+    ss << "\"blockNumber\":\"0x" << std::hex << block->header.number << "\",";
+    ss << "\"transactionIndex\":\"0x" << std::hex << receipt_opt->transaction_index << "\",";
+    
+    ss << "\"from\":\"0x";
+    for (auto b : tx.from.payment_credential) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+    ss << "\",";
+    
+    ss << "\"to\":\"0x";
+    for (auto b : tx.to.payment_credential) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+    ss << "\",";
+    
+    ss << "\"value\":\"0x" << std::hex << tx.value << "\",";
+    ss << "\"gas\":\"0x" << std::hex << tx.gas_limit << "\",";
+    ss << "\"gasPrice\":\"0x" << std::hex << tx.max_fee_per_gas << "\",";
+    
+    ss << "\"input\":\"0x";
+    for (auto b : tx.data) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+    ss << "\"";
+    
+    ss << "}";
+    return Response::success(req.id.value_or(0), ss.str());
 }
 
 Response EthNamespace::get_transaction_by_block_number_and_index(const Request& req) {
@@ -770,6 +898,65 @@ Response EthNamespace::get_logs(const Request& req) {
     return Response::success(req.id.value_or(0), "[]");
 }
 
+Response EthNamespace::get_recent_transactions(const Request& req) {
+    uint64_t count = 50;
+    if (req.params) {
+        std::regex num_regex(R"(\[(\d+)\])");
+        std::smatch match;
+        std::string p = *req.params;
+        if (std::regex_search(p, match, num_regex)) {
+            try {
+                count = std::stoull(match[1].str());
+            } catch(...) {}
+        }
+    }
+
+    uint64_t head = blocks_->get_head();
+    std::ostringstream ss;
+    ss << "[";
+    
+    uint64_t gathered = 0;
+    bool first = true;
+
+    for (uint64_t i = head; i != (uint64_t)-1 && gathered < count; --i) {
+        auto block_opt = blocks_->get_block(i);
+        if (!block_opt) continue;
+
+        for (auto it = block_opt->transactions.rbegin(); it != block_opt->transactions.rend() && gathered < count; ++it) {
+            if (!first) ss << ",";
+            first = false;
+
+            const auto& tx = *it;
+            ss << "{";
+            
+            ss << "\"hash\":\"0x";
+            auto h = tx.hash();
+            for (auto b : h) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"blockNumber\":\"0x" << std::hex << i << "\",";
+            ss << "\"timestamp\":\"0x" << std::hex << block_opt->header.timestamp << "\",";
+            
+            ss << "\"from\":\"0x";
+            for (auto b : tx.from.payment_credential) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"to\":\"0x";
+            for (auto b : tx.to.payment_credential) ss << std::setw(2) << std::setfill('0') << std::hex << (int)b;
+            ss << "\",";
+            
+            ss << "\"value\":\"0x" << std::hex << tx.value << "\",";
+            ss << "\"nonce\":\"0x" << std::hex << tx.nonce << "\"";
+            
+            ss << "}";
+            gathered++;
+        }
+    }
+    ss << "]";
+
+    return Response::success(req.id.value_or(0), ss.str());
+}
+
 void EthNamespace::register_methods(Server& server) {
     server.register_method("eth_chainId", [this](const Request& req) { return chain_id(req); });
     server.register_method("eth_blockNumber", [this](const Request& req) { return block_number(req); });
@@ -791,6 +978,7 @@ void EthNamespace::register_methods(Server& server) {
     server.register_method("eth_call", [this](const Request& req) { return call(req); });
     server.register_method("eth_estimateGas", [this](const Request& req) { return estimate_gas(req); });
     server.register_method("eth_getLogs", [this](const Request& req) { return get_logs(req); });
+    server.register_method("nonagon_getRecentTransactions", [this](const Request& req) { return get_recent_transactions(req); });
     
     server.register_method("web3_clientVersion", [](const Request& req) {
         return Response::success(req.id.value_or(0), "\"Nonagon/v0.1.0/C++20\"");

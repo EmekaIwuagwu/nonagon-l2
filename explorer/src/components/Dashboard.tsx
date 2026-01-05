@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Box, Database, Zap, ArrowRight, Search, Clock, Cpu, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Activity, Box, Database, Zap, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import Footer from './Footer';
 import { formatDistanceToNow } from 'date-fns';
 
 const RPC_URL = "http://localhost:8545";
@@ -25,7 +27,9 @@ const TransactionRow = ({ tx }: { tx: any }) => (
             </div>
             <div>
                 <div className="font-mono text-sm text-blue-600 font-medium truncate w-32 md:w-64">
-                    {tx.hash}
+                    <Link to={`/tx/${tx.hash}`} className="hover:underline">
+                        {tx.hash}
+                    </Link>
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                     {tx.timestamp ? formatDistanceToNow(tx.timestamp) : 'Just now'} ago
@@ -50,9 +54,9 @@ const BlockRow = ({ block }: { block: any }) => (
                 <Box size={18} />
             </div>
             <div>
-                <div className="font-bold text-gray-900">
+                <Link to={`/block/${parseInt(block.number, 16)}`} className="font-bold text-gray-900 hover:text-blue-600 hover:underline">
                     #{parseInt(block.number, 16)}
-                </div>
+                </Link>
                 <div className="text-xs text-gray-500 mt-1">
                     {block.transactions ? block.transactions.length : 0} Transactions
                 </div>
@@ -97,32 +101,59 @@ export default function Dashboard() {
                 const bnJson = await bnRes.json();
                 const height = parseInt(bnJson.result, 16);
                 setBlockHeight(height);
-                setIsConnected(true);
 
-                // Fetch Latest Block
-                const blkRes = await fetch(RPC_URL, {
+                // Fetch Head Block Number
+                const headRes = await fetch(RPC_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getBlockByNumber", params: ["latest", true], id: 2 })
+                    body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 })
                 });
-                const blkJson = await blkRes.json();
-                if (blkJson.result) {
-                    setBlocks([blkJson.result]);
+                const headJson = await headRes.json();
+                const headNum = parseInt(headJson.result, 16);
 
-                    // Process transactions from the block
-                    if (blkJson.result.transactions && blkJson.result.transactions.length > 0) {
-                        const newTxs = blkJson.result.transactions.map((tx: any) => ({
-                            hash: tx.hash,
-                            value: (parseInt(tx.value, 16) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 4 }),
-                            timestamp: new Date(parseInt(blkJson.result.timestamp, 16) * 1000)
-                        }));
-                        setRecentTxs(newTxs.slice(0, 10)); // Show up to 10 latest
-                    } else {
-                        // If no txs in latest block, keep previous or clear?
-                        // For a live ticker, we might want to accumulate, but let's just show latest block's txs for clarity
-                        // Or keep existing if new block is empty? 
-                        // Let's keep existing to avoid flickering to empty
-                    }
+                // Fetch last 10 blocks in parallel
+                const promises = [];
+                for (let i = 0; i < 10; i++) {
+                    const n = headNum - i;
+                    if (n < 0) break;
+                    promises.push(
+                        fetch(RPC_URL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonrpc: "2.0",
+                                method: "eth_getBlockByNumber",
+                                params: ["0x" + n.toString(16), true],
+                                id: n
+                            })
+                        }).then(r => r.json())
+                    );
+                }
+
+                const results = await Promise.all(promises);
+                const blocksData = results.map(r => r.result).filter(b => b);
+                setBlocks(blocksData);
+                setIsConnected(true);
+
+                // Fetch recent transactions using the new optimized RPC method
+                const txRes = await fetch(RPC_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: "2.0",
+                        method: "nonagon_getRecentTransactions",
+                        params: [15],
+                        id: 2
+                    })
+                });
+                const txJson = await txRes.json();
+                if (txJson.result) {
+                    const formattedTxs = txJson.result.map((tx: any) => ({
+                        ...tx,
+                        value: (parseInt(tx.value, 16) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 4 }),
+                        timestamp: new Date(parseInt(tx.timestamp, 16) * 1000)
+                    }));
+                    setRecentTxs(formattedTxs);
                 }
 
             } catch (e) {
@@ -138,26 +169,6 @@ export default function Dashboard() {
 
     return (
         <div className="min-h-screen bg-gray-50 text-gray-900 font-sans p-4 md:p-8">
-            {/* Header */}
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
-                <div>
-                    <h1 className="text-4xl font-extrabold tracking-tight text-black flex items-center gap-3">
-                        <div className="w-12 h-12 bg-black rounded-lg flex items-center justify-center text-white rotate-12">N</div>
-                        NONAGON<span className="text-blue-600">SCAN</span>
-                    </h1>
-                    <p className="text-gray-500 mt-2 font-medium">The Ultra-High Performance Cardano L2 Explorer</p>
-                </div>
-
-                <div className="relative w-full md:w-96 group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Search Tx, Block, Address..."
-                        className="w-full bg-white border border-gray-200 py-4 pl-12 pr-4 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
-                    />
-                </div>
-            </div>
-
             {!isConnected && (
                 <div className="max-w-7xl mx-auto mb-8 bg-yellow-50 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-2xl flex items-center gap-3">
                     <AlertTriangle size={24} />
@@ -182,9 +193,9 @@ export default function Dashboard() {
                             <Box size={20} className="text-blue-600" />
                             Latest Blocks
                         </h2>
-                        <button className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
+                        <Link to="/blocks" className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
                             View All <ArrowRight size={14} />
-                        </button>
+                        </Link>
                     </div>
                     <div className="divide-y divide-gray-50">
                         {blocks.length > 0 ? (
@@ -197,14 +208,14 @@ export default function Dashboard() {
 
                 {/* Latest Transactions */}
                 <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-gray-50 flex justify-between items-center">
+                    <div className="p-6 border-b border-gray-100 flex justify-between items-center">
                         <h2 className="text-lg font-bold flex items-center gap-2">
                             <Zap size={20} className="text-yellow-500" />
                             Latest Transactions
                         </h2>
-                        <button className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
+                        <Link to="/txs" className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
                             View All <ArrowRight size={14} />
-                        </button>
+                        </Link>
                     </div>
                     <div className="divide-y divide-gray-50">
                         {recentTxs.map((tx, i) => <TransactionRow key={i} tx={tx} />)}
@@ -212,22 +223,8 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Footer Meta */}
-            <div className="max-w-7xl mx-auto mt-12 pt-8 border-t border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 text-gray-500 text-sm">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                        L2 Node Status: {isConnected ? 'Operational' : 'Offline'}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Cpu size={16} />
-                        Sequencer: Nonagon-Main-A
-                    </div>
-                </div>
-                <div>
-                    © 2026 Nonagon Labs. Build on Cardano.
-                </div>
-            </div>
+            {/* Premium Footer */}
+            <Footer isConnected={isConnected} />
         </div>
     );
 }

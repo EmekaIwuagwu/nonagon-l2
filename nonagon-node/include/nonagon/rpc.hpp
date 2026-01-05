@@ -206,6 +206,7 @@ public:
     Response get_transaction_by_hash(const Request& req);
     Response get_transaction_by_block_number_and_index(const Request& req);
     Response get_transaction_receipt(const Request& req);
+    Response get_recent_transactions(const Request& req);
     
     // Transaction submission
     Response send_raw_transaction(const Request& req);

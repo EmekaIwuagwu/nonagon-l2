@@ -11,3 +11,10 @@ obj/
 *.lib
 *.pdb
 __pycache__/
+data/
+*.db
+*.wal
+*.shm
+.gemini/
+.agent/
+*.log
