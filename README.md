@@ -263,27 +263,26 @@ cd wallet && npm test
 
 ### Phase 2: Settlement (Months 7-12)
 - [ ] Cardano Plutus contracts
-- [ ] Batch submission
+- [x] Batch submission
 - [ ] Fraud proof system
 - [ ] Bridge contracts
 
 ### Phase 3: Execution (Months 13-18)
-- [ ] Full EVM integration
-- [ ] Gas model
-- [ ] RPC API
+- [x] Full EVM integration
+- [x] Gas model
+- [x] RPC API
 - [ ] Public testnet
 
 ### Phase 4: User Interfaces (Months 19-24)
 - [ ] Production wallet
-- [ ] Block explorer
+- [x] Block explorer
 - [ ] Bridge UI
-- [ ] Documentation
+- [x] Documentation
 
 ### Phase 5: Mainnet (Months 25-30)
 - [ ] Security audits
 - [ ] Incentivized testnet
 - [ ] Mainnet launch
-
 ---
 
 ## 🤝 Contributing
@@ -308,5 +307,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 *Built with ❤️ for Cardano*
-#   n o n a g o n - l 2  
+#   n o n a g o n - l 2 
+ 
  
