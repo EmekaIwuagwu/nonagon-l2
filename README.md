@@ -283,6 +283,7 @@ cd wallet && npm test
 - [ ] Security audits
 - [ ] Incentivized testnet
 - [ ] Mainnet launch
+
 ---
 
 ## 🤝 Contributing
@@ -307,6 +308,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 *Built with ❤️ for Cardano*
-#   n o n a g o n - l 2 
- 
- 
