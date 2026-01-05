@@ -940,10 +940,70 @@ ExecutionResult EVM::execute_code(const Address& caller, const Address& address,
                     auto ret_offset_w = state.stack.back(); state.stack.pop_back();
                     auto ret_size_w = state.stack.back(); state.stack.pop_back();
                     
-                    // For now, push 1 (success) - full impl would make actual call
-                    uint256 success = {};
-                    success[3] = 1;
-                    state.stack.push_back(success);
+                    uint64_t val = value_w[3];
+                    uint64_t args_off = args_offset_w[3];
+                    uint64_t args_sz = args_size_w[3];
+                    uint64_t ret_off = ret_offset_w[3];
+                    uint64_t ret_sz = ret_size_w[3];
+                    uint64_t gas = gas_w[3];
+
+                    // Extract Address (28 bytes)
+                    Address to_addr;
+                    // Provide defaults
+                    
+                    // Decode uint256 addr_w to 28 bytes
+                    auto extract_byte = [&](int word_idx, int byte_idx) {
+                        return (uint8_t)((addr_w[word_idx] >> (byte_idx * 8)) & 0xFF);
+                    };
+                    
+                    // 28 bytes total. 
+                    // Word 0 (Top): skip 4, take 4 loops (3 downto 0).
+                    int pos = 0;
+                    for(int i=3; i>=0; --i) to_addr.payment_credential[pos++] = extract_byte(0, i);
+                    for(int i=7; i>=0; --i) to_addr.payment_credential[pos++] = extract_byte(1, i);
+                    for(int i=7; i>=0; --i) to_addr.payment_credential[pos++] = extract_byte(2, i);
+                    for(int i=7; i>=0; --i) to_addr.payment_credential[pos++] = extract_byte(3, i);
+                    
+                    // Get args
+                    Bytes input;
+                    if (args_sz > 0) {
+                        if (state.memory.size() < args_off + args_sz) state.memory.resize(args_off + args_sz);
+                        input.assign(state.memory.begin() + args_off, state.memory.begin() + args_off + args_sz);
+                    }
+
+                    auto snap = state_->snapshot();
+                    bool success = true;
+
+                    if (val > 0) {
+                        if (state_->get_balance(address) >= val) {
+                            state_->sub_balance(address, val);
+                            state_->add_balance(to_addr, val);
+                        } else {
+                            success = false;
+                        }
+                    }
+
+                    if (success) {
+                        Bytes target_code = state_->get_code(to_addr);
+                        // If precompile check needed here? execute_code logic handles it? yes (L158 in Step 2116)
+                        auto res = execute_code(address, to_addr, target_code, input, val, gas, is_static);
+                        success = res.success;
+                        
+                        if (ret_sz > 0) {
+                             if (state.memory.size() < ret_off + ret_sz) state.memory.resize(ret_off + ret_sz);
+                             size_t copy = std::min((size_t)ret_sz, res.return_data.size());
+                             std::copy(res.return_data.begin(), res.return_data.begin() + copy, state.memory.begin() + ret_off);
+                        }
+                    }
+
+                    if (!success) {
+                        state_->revert(snap);
+                        uint256 zero = {};
+                        state.stack.push_back(zero);
+                    } else {
+                        uint256 one = {}; one[3] = 1;
+                        state.stack.push_back(one);
+                    }
                 }
                 break;
             }
@@ -985,8 +1045,65 @@ ExecutionResult EVM::execute_code(const Address& caller, const Address& address,
                     auto offset_w = state.stack.back(); state.stack.pop_back();
                     auto size_w = state.stack.back(); state.stack.pop_back();
                     
-                    // Would deploy contract - for now return zero address
-                    state.stack.push_back({});
+                    uint64_t value = value_w[3];
+                    uint64_t offset = offset_w[3];
+                    uint64_t size = size_w[3];
+
+                    // Check balance
+                    if (state_->get_balance(address) < value) {
+                        state.stack.push_back({}); // fail
+                        break;
+                    }
+
+                    // Get Init Code
+                    Bytes init_code;
+                    if (size > 0 && offset + size <= state.memory.size()) {
+                        init_code.assign(state.memory.begin() + offset, state.memory.begin() + offset + size);
+                    }
+
+                    // Calculate new address (Blake2b of addr + nonce)
+                    uint64_t nonce = state_->get_nonce(address);
+                    state_->increment_nonce(address);
+
+                    std::vector<uint8_t> preimage;
+                    preimage.insert(preimage.end(), address.payment_credential.begin(), address.payment_credential.end());
+                    for(int i=7; i>=0; --i) preimage.push_back((uint8_t)((nonce >> (i*8)) & 0xFF));
+                    auto hash = crypto::Blake2b256::hash(preimage);
+
+                    Address new_addr;
+                    new_addr.type = Address::Type::Script;
+                    std::copy(hash.begin(), hash.begin()+28, new_addr.payment_credential.begin());
+
+                    // Snapshot
+                    auto snap = state_->snapshot();
+
+                    // Transfer
+                    state_->sub_balance(address, value);
+                    state_->add_balance(new_addr, value);
+                    state_->set_account(new_addr, {value, 0}); // Reset account code/storage implicitly? (Assuming empty)
+
+                    // Execute Init Code
+                    auto res = execute_code(address, new_addr, init_code, {}, value, state.gas_remaining, false);
+
+                    if (res.success) {
+                        state_->set_code(new_addr, res.return_data);
+                        
+                        // Push Address to stack
+                        uint256 addr_val = {};
+                        // Pack 28 bytes into uint256 (Right aligned)
+                        // addr bytes: [0..27]
+                        // uint256: [0]=High, [3]=Low
+                        // [0]: bytes 0..3 of addr go to lowest 4 bytes of word 0
+                        for(int i=0; i<4; ++i) addr_val[0] |= ((uint64_t)new_addr.payment_credential[i] << ((3-i)*8));
+                        for(int i=0; i<8; ++i) addr_val[1] |= ((uint64_t)new_addr.payment_credential[4+i] << ((7-i)*8));
+                        for(int i=0; i<8; ++i) addr_val[2] |= ((uint64_t)new_addr.payment_credential[12+i] << ((7-i)*8));
+                        for(int i=0; i<8; ++i) addr_val[3] |= ((uint64_t)new_addr.payment_credential[20+i] << ((7-i)*8));
+                        
+                        state.stack.push_back(addr_val);
+                    } else {
+                        state_->revert(snap);
+                        state.stack.push_back({}); // 0
+                    }
                 }
                 break;
             }
