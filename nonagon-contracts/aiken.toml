@@ -1,0 +1,11 @@
+name = "nonagon/contracts"
+version = "0.0.0"
+compiler = "v1.1.19"
+plutus = "v3"
+license = "MIT"
+description = "Nonagon L2 Smart Contracts"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "3.0.0"
+source = "github"

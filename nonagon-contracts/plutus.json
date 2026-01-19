@@ -1,0 +1,117 @@
+{
+  "preamble": {
+    "title": "nonagon/contracts",
+    "description": "Nonagon L2 Smart Contracts",
+    "version": "0.0.0",
+    "plutusVersion": "v3",
+    "compiler": {
+      "name": "Aiken",
+      "version": "v1.1.19+e525483"
+    },
+    "license": "MIT"
+  },
+  "validators": [
+    {
+      "title": "state_commitment.state_commitment.spend",
+      "datum": {
+        "title": "datum",
+        "schema": {
+          "$ref": "#/definitions/nonagon~1types~1StateCommitmentDatum"
+        }
+      },
+      "redeemer": {
+        "title": "redeemer",
+        "schema": {
+          "$ref": "#/definitions/nonagon~1types~1StateCommitmentRedeemer"
+        }
+      },
+      "compiledCode": "5902b701010029800aba2aba1aba0aab9faab9eaab9dab9a488888896600264653001300800198041804800cc0200092225980099b8748008c01cdd500144c8cc8a60022b30013001300a375400513259800980118059baa00789919912cc004c014c038dd500144cc88c966002601060226ea8006264b30013370e900218091baa0018992cc004c028c04cdd5000c4c8c8c8c8c8c8c8ca60026eb8c07c0066eb4c07c0226eb4c07c01e6eb4c07c01a6eb8c07c0166eb8c07c0126eb8c07c00e6eb4c07c00922222222598009814004c5660026466446600400400244b30010018a508acc004cdc79bae302a0010038a518998010011815800a04a40a06eb0c0a0c0a4c0a4c0a4c0a4c0a4c0a4c0a4c0a4c094dd500f1bae30163024375403315980099b87375a604e60486ea8044cdc01bad3027302437540329001456600266e3cdd7181398141814181418121baa011375c604e605060506050605060486ea8066266e3cdd7180b18121baa011375c602c60486ea80662941022452820448a504089164094301f001301e001301d001301c001301b001301a001301900130143754003164048602c60266ea80062c8088c008c048dd5180a98091baa0018b2020330053758600260226ea80288cdd7980a98091baa001301530123754602a602c60246ea800cc048c03cdd500111809980a180a000c5900d198009bac3010300d375400c49448c044c048c048c048c048c048c048c04800488c8cc00400400c896600200314c103d87a80008992cc004c010006266e952000330130014bd7044cc00c00cc05400900f1809800a0228a504028601c60166ea800a2c804a60146ea801a601c0069112cc004c01000a2b3001300e37540130038b201e8acc004cdc3a400400515980098071baa009801c5900f45900c2018180618068009b8748000c020dd50014590060c020004c00cdd5004452689b2b20021",
+      "hash": "39506b15c42e1fa1f4e333d8ac995d08e2fec87689bdc68dfee05532"
+    },
+    {
+      "title": "state_commitment.state_commitment.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "compiledCode": "5902b701010029800aba2aba1aba0aab9faab9eaab9dab9a488888896600264653001300800198041804800cc0200092225980099b8748008c01cdd500144c8cc8a60022b30013001300a375400513259800980118059baa00789919912cc004c014c038dd500144cc88c966002601060226ea8006264b30013370e900218091baa0018992cc004c028c04cdd5000c4c8c8c8c8c8c8c8ca60026eb8c07c0066eb4c07c0226eb4c07c01e6eb4c07c01a6eb8c07c0166eb8c07c0126eb8c07c00e6eb4c07c00922222222598009814004c5660026466446600400400244b30010018a508acc004cdc79bae302a0010038a518998010011815800a04a40a06eb0c0a0c0a4c0a4c0a4c0a4c0a4c0a4c0a4c0a4c094dd500f1bae30163024375403315980099b87375a604e60486ea8044cdc01bad3027302437540329001456600266e3cdd7181398141814181418121baa011375c604e605060506050605060486ea8066266e3cdd7180b18121baa011375c602c60486ea80662941022452820448a504089164094301f001301e001301d001301c001301b001301a001301900130143754003164048602c60266ea80062c8088c008c048dd5180a98091baa0018b2020330053758600260226ea80288cdd7980a98091baa001301530123754602a602c60246ea800cc048c03cdd500111809980a180a000c5900d198009bac3010300d375400c49448c044c048c048c048c048c048c048c04800488c8cc00400400c896600200314c103d87a80008992cc004c010006266e952000330130014bd7044cc00c00cc05400900f1809800a0228a504028601c60166ea800a2c804a60146ea801a601c0069112cc004c01000a2b3001300e37540130038b201e8acc004cdc3a400400515980098071baa009801c5900f45900c2018180618068009b8748000c020dd50014590060c020004c00cdd5004452689b2b20021",
+      "hash": "39506b15c42e1fa1f4e333d8ac995d08e2fec87689bdc68dfee05532"
+    }
+  ],
+  "definitions": {
+    "ByteArray": {
+      "dataType": "bytes"
+    },
+    "Int": {
+      "dataType": "integer"
+    },
+    "nonagon/types/StateCommitmentDatum": {
+      "title": "StateCommitmentDatum",
+      "description": "Represents the committed state of the L2 on L1.\n Mirrors `StateCommitmentDatum` in C++ node.",
+      "anyOf": [
+        {
+          "title": "StateCommitmentDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "batch_id",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "start_block",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "end_block",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "pre_state_root",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "post_state_root",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "transactions_root",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "timestamp",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "sequencer",
+              "$ref": "#/definitions/nonagon~1types~1VerificationKeyHash"
+            }
+          ]
+        }
+      ]
+    },
+    "nonagon/types/StateCommitmentRedeemer": {
+      "title": "StateCommitmentRedeemer",
+      "description": "Actions that can be performed on the State Commitment Contract",
+      "anyOf": [
+        {
+          "title": "PublishBatch",
+          "description": "Publish a new batch of L2 blocks.\n This updates the datum with new state roots.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "UpdateSequencer",
+          "description": "Update the sequencer (Governance action - placeholder for now)",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "nonagon/types/VerificationKeyHash": {
+      "title": "VerificationKeyHash",
+      "dataType": "bytes"
+    }
+  }
+}
