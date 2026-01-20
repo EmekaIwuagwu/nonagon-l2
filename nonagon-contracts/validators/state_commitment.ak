@@ -1,12 +1,11 @@
 use aiken/collection/list
 use aiken/crypto.{VerificationKeyHash}
-use aiken/primitive/bytearray
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction,
 }
 use nonagon/types.{PublishBatch, StateCommitmentDatum, StateCommitmentRedeemer}
 
-const authorized_sequencer: VerificationKeyHash =
+pub const authorized_sequencer: VerificationKeyHash =
   #"a41af35019f8be5c24f2e3abdd9c677de21cb383c67f170f5faabeb1"
 
 
@@ -25,7 +24,7 @@ validator state_commitment {
         expect Some(own_input) =
           list.find(
             transaction.inputs,
-            fn(input) {
+            fn(_input) {
               True
             },
           )
