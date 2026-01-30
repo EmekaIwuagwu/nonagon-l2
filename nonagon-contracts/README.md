@@ -6,8 +6,10 @@ This directory contains the Aiken smart contracts for the **Nonagon Optimistic R
 
 - `lib/nonagon/`: Shared types (Datum, Redeemer) mirroring C++ node structures.
 - `validators/`: Main contract logic.
-  - `state_commitment.ak`: Anchors L2 state roots to L1.
-- `scripts/`: Utility scripts for credential management.
+  - `state_commitment.ak`: Anchors L2 state roots to L1 with dynamic sequencer support.
+- `scripts/`: Utility scripts for credential management and automation.
+  - `gen_key.js`: Generates new sequencer credentials.
+  - `sequencer_cli.js`: Integration bridge for the C++ node.
 
 ---
 
@@ -21,13 +23,14 @@ The contract maintains an immutable, cryptographically-linked sequence of L2 sta
 
 ### 2. Key Logic
 
-The validator enforces strict rules for every state update (Batch Submission):
+The validator enforces strict rules for every state update:
 
-- **Authorization**: Every transaction must be signed by the authorized **Sequencer** (verified via `VerificationKeyHash`).
+- **Dynamic Authorization**: Instead of hardcoded keys, the contract reads the authorized **Sequencer** directly from the current on-chain state (Datum).
+- **Update Path**: Supports `UpdateSequencer` redeemer, allowing the current sequencer to safely rotate control to a new set of keys while preserving all L2 state data.
 - **Continuity**:
-  - The `batch_id` must increment exactly by 1 (no skipped or duplicate batches).
-  - The `pre_state_root` of the new batch must exactly match the `post_state_root` of the previous batch. This creates a "hash chain" of states.
-- **Immutability**: The script ensures that the state is updated by spending the previous UTxO and creating a new one at the same script address (State Folding).
+  - The `batch_id` must increment exactly by 1.
+  - The `pre_state_root` of the new batch must exactly match the `post_state_root` of the previous batch.
+- **State Folding**: The script ensures that the state is updated by spending the previous UTxO and creating a new one at the same script address.
 
 ### 3. Data Structures
 
@@ -43,6 +46,27 @@ The validator enforces strict rules for every state update (Batch Submission):
 | `transactions_root` | `ByteArray` | Merkle root of all L2 transactions (Data Availability). |
 | `timestamp` | `Int` | Unix timestamp of batch creation. |
 | `sequencer` | `Hash` | The public key hash of the authorized sequencer. |
+
+---
+
+## ⚙️ Automation & Integration
+
+The C++ **nonagon-node** integrates with these contracts via the `sequencer_cli.js` bridge.
+
+### 1. Discovery
+
+The node uses `node sequencer_cli.js get-latest` to:
+
+- Dynamically find the L1 script address from `plutus.json`.
+- Identify the most recent batch and state root confirmed on Cardano.
+
+### 2. Submission
+
+The node uses `node sequencer_cli.js publish '<batch_json>'` to:
+
+- Construct a valid Plutus transaction.
+- Attach the required signature from `credentials.json`.
+- Submit the new state commitment to the L1 network.
 
 ---
 
@@ -63,19 +87,10 @@ aiken check
 
 ## 🔑 Credential Management
 
-Use the provided Node.js scripts to manage sequencer keys:
-
 1. Navigate to `scripts/`.
 2. Install dependencies: `npm install`.
-3. Generate keys: `node gen_key.js`.
+3. Generate initial keys: `node gen_key.js`.
 4. Credentials will be saved to `scripts/credentials.json`.
 
-> [!CAUTION]
-> Never share your `privateKey`. If lost, the State Commitment contract will be locked unless a governance rotation mechanism is implemented.
-
-## 🔗 Integration with `nonagon-node`
-
-The C++ node uses the compiled `plutus.json` (specifically the `state_commitment` script hash) to:
-
-1. Discover the latest state root on Cardano.
-2. Construct and submit `PublishBatch` transactions to L1.
+> [!TIP]
+> Use the rotation feature (`UpdateSequencer`) to change keys without re-deploying the contract. This is critical for long-term security and key management.

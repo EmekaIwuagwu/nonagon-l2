@@ -1,19 +1,16 @@
 use aiken/collection/list
-use aiken/crypto.{VerificationKeyHash}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction,
 }
-use nonagon/types.{PublishBatch, StateCommitmentDatum, StateCommitmentRedeemer}
-
-pub const authorized_sequencer: VerificationKeyHash =
-  #"a41af35019f8be5c24f2e3abdd9c677de21cb383c67f170f5faabeb1"
-
+use nonagon/types.{
+  PublishBatch, StateCommitmentDatum, StateCommitmentRedeemer, UpdateSequencer,
+}
 
 validator state_commitment {
   spend(
     datum: Option<StateCommitmentDatum>,
     redeemer: StateCommitmentRedeemer,
-    _ref: OutputReference,
+    ref: OutputReference,
     transaction: Transaction,
   ) {
     expect Some(current_datum) = datum
@@ -21,13 +18,10 @@ validator state_commitment {
       PublishBatch -> {
         let must_be_signed =
           list.has(transaction.extra_signatories, current_datum.sequencer)
+
         expect Some(own_input) =
-          list.find(
-            transaction.inputs,
-            fn(_input) {
-              True
-            },
-          )
+          list.find(transaction.inputs, fn(input) { input.output_reference == ref })
+
         // Find the single output that goes back to this script
         expect Some(next_output) =
           list.find(
@@ -40,13 +34,12 @@ validator state_commitment {
         expect next_datum: StateCommitmentDatum = next_datum_data
 
         // Validate State Transitions
-        let valid_batch_sequence =
-          next_datum.batch_id == current_datum.batch_id + 1
+        let valid_batch_sequence = next_datum.batch_id == current_datum.batch_id + 1
         let valid_state_link =
           next_datum.pre_state_root == current_datum.post_state_root
-        // Enforce Sequencer Continuity (unless rotation logic)
-        let sequencer_unchanged =
-          next_datum.sequencer == current_datum.sequencer
+
+        // Enforce Sequencer Continuity
+        let sequencer_unchanged = next_datum.sequencer == current_datum.sequencer
 
         and {
           must_be_signed?,
@@ -55,9 +48,39 @@ validator state_commitment {
           sequencer_unchanged?,
         }
       }
-      _ -> False
+      UpdateSequencer -> {
+        let must_be_signed =
+          list.has(transaction.extra_signatories, current_datum.sequencer)
+
+        expect Some(own_input) =
+          list.find(transaction.inputs, fn(input) { input.output_reference == ref })
+
+        expect Some(next_output) =
+          list.find(
+            transaction.outputs,
+            fn(output) { output.address == own_input.output.address },
+          )
+
+        expect InlineDatum(next_datum_data) = next_output.datum
+        expect next_datum: StateCommitmentDatum = next_datum_data
+
+        // Ensure ONLY the sequencer is changing, and other state is preserved
+        let state_preserved =
+          and {
+            next_datum.batch_id == current_datum.batch_id,
+            next_datum.pre_state_root == current_datum.pre_state_root,
+            next_datum.post_state_root == current_datum.post_state_root,
+            next_datum.start_block == current_datum.start_block,
+            next_datum.end_block == current_datum.end_block,
+            next_datum.transactions_root == current_datum.transactions_root,
+          }
+
+        and {
+          must_be_signed?,
+          state_preserved?,
+        }
+      }
     }
-    // UpdateSequencer not implemented yet
   }
 
   else(_) {

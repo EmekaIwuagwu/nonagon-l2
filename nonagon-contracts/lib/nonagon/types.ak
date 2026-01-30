@@ -1,7 +1,5 @@
-use aiken/crypto.{Blake2b_224, Hash, VerificationKey}
+use aiken/crypto.{VerificationKeyHash}
 
-pub type VerificationKeyHash =
-  Hash<Blake2b_224, VerificationKey>
 /// Represents the committed state of the L2 on L1.
 /// Mirrors `StateCommitmentDatum` in C++ node.
 pub type StateCommitmentDatum {
